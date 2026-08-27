@@ -1,0 +1,9 @@
+{
+  "name": "RemoteControl 60FPS",
+  "short_name": "RemoteControl",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#0f172a",
+  "orientation": "landscape"
+}

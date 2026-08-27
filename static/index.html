@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Windows 60FPS Remote Desktop</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Top Header Bar -->
+    <header id="header-bar">
+      <div class="brand">
+        <span class="status-indicator online" id="status-dot"></span>
+        <h1>RemoteControl <span class="badge">60 FPS 2K</span></h1>
+      </div>
+      <div class="stats-group">
+        <div class="stat-pill"><span class="label">FPS:</span> <span id="stat-fps" class="val">0</span></div>
+        <div class="stat-pill"><span class="label">RTT:</span> <span id="stat-rtt" class="val">0 ms</span></div>
+        <div class="stat-pill"><span class="label">Bitrate:</span> <span class="val" style="color: #38bdf8;">30 Mbps</span></div>
+      </div>
+      <div class="action-group">
+        <button id="btn-lock" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zM9 7a3 3 0 0 1 6 0v3H9V7z"/></svg>
+          <span id="lock-btn-text">鎖定滑鼠</span>
+        </button>
+        <button id="btn-soft-keyboard" class="btn btn-secondary">⌨️ 鍵盤輸入</button>
+        <button id="btn-shortcut-center" class="btn btn-secondary">⚡ 快捷鍵中心</button>
+        <button id="btn-fullscreen" class="btn btn-secondary">⛶ 沉浸滿版</button>
+        <button id="btn-settings-toggle" class="btn btn-icon">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Main Viewport for WebRTC Stream Video (Strictly constrained to visible pixels) -->
+    <main id="viewport">
+      <video id="stream-video" autoplay playsinline muted></video>
+      
+      <!-- Pointer Lock Overlay Prompt -->
+      <div id="lock-prompt" class="lock-overlay hidden">
+        <div class="prompt-card">
+          <div class="icon">🖱️</div>
+          <h3>已進入滑鼠鎖定模式</h3>
+          <p>羅技 M650 滑鼠已接管 Windows 游標</p>
+          <p class="subtext">支援：相對位移、SmartWheel 滾輪、側鍵 (前進/後退)、左右鍵</p>
+          <div class="hint">按 <code>ESC</code> 鍵或點擊解除鎖定</div>
+        </div>
+      </div>
+
+      <!-- Mouse Button Visualizer HUD -->
+      <div id="mouse-hud" class="mouse-hud">
+        <span id="hud-btn-left" class="m-btn">L</span>
+        <span id="hud-btn-mid" class="m-btn">M</span>
+        <span id="hud-btn-right" class="m-btn">R</span>
+        <span id="hud-btn-b1" class="m-btn">側鍵後</span>
+        <span id="hud-btn-b2" class="m-btn">側鍵前</span>
+      </div>
+
+      <!-- Floating Text / Soft Keyboard Input Box for iPad IME -->
+      <div id="text-input-panel" class="text-input-panel hidden">
+        <input type="text" id="ime-input" placeholder="在 iPad 上打字或輸入中文，按 Enter 直接送出到電腦..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button id="btn-send-text" class="btn btn-primary">送出</button>
+        <button id="btn-close-ime" class="btn btn-secondary">關閉</button>
+      </div>
+
+      <!-- Quick Virtual Shortcut Floating Bar -->
+      <div id="quick-toolbar" class="quick-toolbar">
+        <button class="v-key" data-key="esc">Esc</button>
+        <button class="v-key" data-key="tab">Tab</button>
+        <button class="v-key" data-key="win">Win</button>
+        <button class="v-macro" data-macro="alt,tab">Alt+Tab</button>
+        <button class="v-macro" data-macro="win,d">Win+D (桌面)</button>
+        <button class="v-macro" data-macro="ctrl,c">複製</button>
+        <button class="v-macro" data-macro="ctrl,v">貼上</button>
+        <button class="v-key" data-key="enter">Enter</button>
+      </div>
+
+      <!-- Always-accessible Floating Controls FAB -->
+      <div id="floating-fab-group" class="floating-fab-group">
+        <button id="fab-keyboard" class="fab-btn" title="立即打字">⌨️ 打字</button>
+        <button id="fab-shortcuts" class="fab-btn" title="快捷鍵中心">⚡ 快捷鍵</button>
+        <button id="fab-immersive" class="fab-btn" title="切換沉浸滿版">⛶ 滿版</button>
+      </div>
+    </main>
+
+    <!-- Full Shortcut Center Modal -->
+    <div id="shortcut-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>⚡ Windows 全功能快捷鍵中心</h3>
+          <button id="btn-close-shortcuts" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="shortcut-section">
+            <h4>📋 剪貼簿與編輯</h4>
+            <div class="grid-buttons">
+              <button class="s-btn" data-macro="ctrl,c"><span class="k">Ctrl+C</span> 複製</button>
+              <button class="s-btn" data-macro="ctrl,v"><span class="k">Ctrl+V</span> 貼上</button>
+              <button class="s-btn" data-macro="ctrl,x"><span class="k">Ctrl+X</span> 剪下</button>
+              <button class="s-btn" data-macro="ctrl,a"><span class="k">Ctrl+A</span> 全選</button>
+              <button class="s-btn" data-macro="ctrl,z"><span class="k">Ctrl+Z</span> 復原</button>
+              <button class="s-btn" data-macro="ctrl,y"><span class="k">Ctrl+Y</span> 重做</button>
+              <button class="s-btn" data-macro="ctrl,s"><span class="k">Ctrl+S</span> 儲存</button>
+              <button class="s-btn" data-macro="win,v"><span class="k">Win+V</span> 剪貼簿記錄</button>
+            </div>
+          </div>
+
+          <div class="shortcut-section">
+            <h4>🪟 視窗與系統管理</h4>
+            <div class="grid-buttons">
+              <button class="s-btn" data-macro="alt,tab"><span class="k">Alt+Tab</span> 切換視窗</button>
+              <button class="s-btn" data-macro="win,tab"><span class="k">Win+Tab</span> 工作檢視</button>
+              <button class="s-btn" data-macro="win,d"><span class="k">Win+D</span> 顯示桌面</button>
+              <button class="s-btn" data-macro="win,e"><span class="k">Win+E</span> 檔案總管</button>
+              <button class="s-btn" data-macro="alt,f4"><span class="k">Alt+F4</span> 關閉視窗</button>
+              <button class="s-btn" data-macro="ctrl,shift,esc"><span class="k">Ctrl+Shift+Esc</span> 工作管理員</button>
+              <button class="s-btn" data-macro="win,l"><span class="k">Win+L</span> 鎖定電腦</button>
+              <button class="s-btn" data-macro="win,shift,s"><span class="k">Win+Shift+S</span> 區域截圖</button>
+            </div>
+          </div>
+
+          <div class="shortcut-section">
+            <h4>🌐 瀏覽器與常用導覽</h4>
+            <div class="grid-buttons">
+              <button class="s-btn" data-macro="ctrl,t"><span class="k">Ctrl+T</span> 新分頁</button>
+              <button class="s-btn" data-macro="ctrl,w"><span class="k">Ctrl+W</span> 關閉分頁</button>
+              <button class="s-btn" data-macro="ctrl,shift,t"><span class="k">Ctrl+Shift+T</span> 復原分頁</button>
+              <button class="s-btn" data-macro="ctrl,r"><span class="k">Ctrl+R</span> 重新整理</button>
+              <button class="s-btn" data-macro="ctrl,f"><span class="k">Ctrl+F</span> 搜尋</button>
+              <button class="s-btn" data-macro="alt,left"><span class="k">Alt+←</span> 上一頁</button>
+              <button class="s-btn" data-macro="alt,right"><span class="k">Alt+→</span> 下一頁</button>
+              <button class="s-btn" data-macro="f5"><span class="k">F5</span> 重新整理</button>
+            </div>
+          </div>
+
+          <div class="shortcut-section">
+            <h4>⌨️ 特殊鍵與功能鍵</h4>
+            <div class="grid-buttons">
+              <button class="s-key" data-key="esc">Esc</button>
+              <button class="s-key" data-key="tab">Tab</button>
+              <button class="s-key" data-key="win">Win</button>
+              <button class="s-key" data-key="enter">Enter</button>
+              <button class="s-key" data-key="backspace">⌫ 倒退</button>
+              <button class="s-key" data-key="delete">Del</button>
+              <button class="s-key" data-key="up">↑</button>
+              <button class="s-key" data-key="down">↓</button>
+              <button class="s-key" data-key="left">←</button>
+              <button class="s-key" data-key="right">→</button>
+              <button class="s-key" data-key="f11">F11 全螢幕</button>
+              <button class="s-key" data-key="f12">F12 開發工具</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Drawer -->
+    <aside id="settings-drawer" class="drawer hidden">
+      <div class="drawer-header">
+        <h3>串流與控制設定</h3>
+        <button id="btn-close-settings" class="btn-close">&times;</button>
+      </div>
+      <div class="drawer-content">
+        <div class="form-group">
+          <label for="slider-sensitivity">M650 滑鼠靈敏度: <span id="val-sensitivity">1.0</span>x</label>
+          <input type="range" id="slider-sensitivity" min="0.2" max="3.0" step="0.1" value="1.0" class="slider">
+        </div>
+        <div class="form-group">
+          <label for="slider-wheel-speed">滾輪速度係數: <span id="val-wheel-speed">1.0</span>x</label>
+          <input type="range" id="slider-wheel-speed" min="0.2" max="3.0" step="0.1" value="1.0" class="slider">
+        </div>
+        <div class="form-group checkbox-group">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" id="chk-invert-wheel">
+            <span>反轉滾輪方向</span>
+          </label>
+        </div>
+        <hr>
+        <div class="system-info">
+          <h4>連線與系統資訊</h4>
+          <p>傳輸協議: <span class="badge-green">WebRTC 60FPS (30Mbps)</span></p>
+          <p>主機解析度: <span id="info-host-res">2560 x 1440 (2K)</span></p>
+          <p>滑鼠游標: <span class="badge-green">硬體游標已即時繪製</span></p>
+          <p>小技巧: <span style="color: #cbd5e1;">Safari 點「分享 ➔ 加入主畫面」獲得 100% 滿版原生體驗</span></p>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
